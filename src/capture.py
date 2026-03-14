@@ -1,40 +1,54 @@
-from scapy.all import sniff, IP, TCP
 import threading
-import queue
+from scapy.all import sniff
+from scapy.layers.inet import IP
 
-class PacketCapture: 
 
-    """Handles network packet capturing asynchronously."""
+class PacketCapture:
+    """
+    PacketCapture is responsible for intercepting network packets from
+    a given interface and forwarding them to a shared queue.
 
-    def __init__(self):
+    This module only performs packet acquisition and does not process data.
+    """
 
-        # We use a thread-safe queue to pass packets from the sniffer to the analyzer
-
-        self.packet_queue = queue.Queue()
+    def __init__(self, packet_queue):
+        self.packet_queue = packet_queue
         self.stop_event = threading.Event()
 
-    def packet_callback(self, packet):
+    def start_capture(self, interface):
+        """
+        Starts the packet capture in a separate daemon thread.
+        """
+        thread = threading.Thread(
+            target=self._run,
+            args=(interface,),
+            daemon=True
+        )
+        thread.start()
 
-        """Callback invoked by Scapy for every captured packet."""
-        # Only process packets containing both IP and TCP layers
+    def _run(self, interface):
+        """
+        Internal capture loop using Scapy sniff().
+        """
 
-        if IP in packet and TCP in packet:
+        sniff(
+            iface=interface,
+            prn=self._callback,
+            store=False,
+            stop_filter=lambda _: self.stop_event.is_set()
+        )
+
+    def _callback(self, packet):
+        """
+        Callback executed for every captured packet.
+        Only IP packets are forwarded to the analysis queue.
+        """
+
+        if packet.haslayer(IP):
             self.packet_queue.put(packet)
 
-    def startcapture(self, interface="eth0"):
-
-        """Starts sniffing in a separate thread to avoid blocking the main application."""
-        # store=0 prevents packets from being kept in memory
-        
-        def capture_thread():
-            sniff(iface=interface, prn=self.packet_callback, store=0, stop_filter=lambda _: self.stop_event.is_set())
-
-        self.thread = threading.Thread(target=capture_thread)
-        self.thread.start()
-        
     def stop(self):
-
-        """Signals the sniffer thread to stop and waits for it to join."""
-        
+        """
+        Signals the capture thread to stop.
+        """
         self.stop_event.set()
-        self.thread.join()
