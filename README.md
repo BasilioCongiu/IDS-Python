@@ -1,118 +1,141 @@
-Obiettivo del progetto
-Lo scopo del progetto è sviluppare un Intrusion Detection System (IDS) in grado di analizzare il traffico di rete in tempo reale.
-Il sistema intercetta i pacchetti che transitano sulla rete, ne estrae le informazioni principali (metadati) e le rende visibili tramite una dashboard web interattiva.
-L'obiettivo è creare uno strumento che permetta di:
-    • osservare il traffico di rete live
-    • comprendere chi comunica con chi
-    • visualizzare i dati senza dover usare il terminale
-Per realizzare questo sistema ho progettato un'architettura modulare che separa le tre fasi principali:
-    1. Cattura dei pacchetti
-    2. Analisi dei pacchetti
-    3. Visualizzazione tramite web app
+# Network Intrusion Detection System (IDS)
 
-Architettura del sistema
-Per mantenere il codice organizzato e scalabile ho applicato il principio di Separation of Concerns, dividendo il progetto in tre moduli indipendenti.
-Network Traffic
-      │
-      ▼
-+-------------+
-| capture.py  |
-| Packet sniff|
-+-------------+
-      │
-      ▼
-+-------------+
-|  Queue      |
-| Buffer      |
-+-------------+
-      │
-      ▼
-+-------------+
-| analyzer.py |
-| Metadata    |
-| extraction  |
-+-------------+
-      │
-      ▼
-+-------------+
-|   app.py    |
-| Streamlit   |
-| Dashboard   |
-+-------------+
-Moduli principali
-capture.py
-    • intercetta i pacchetti di rete
-    • utilizza Scapy per effettuare lo sniffing
-analyzer.py
-    • elabora i pacchetti catturati
-    • estrae metadati come:
-        ◦ IP sorgente
-        ◦ IP destinazione
-        ◦ protocollo
-        ◦ dimensione del pacchetto
-app.py
-    • interfaccia web sviluppata con Streamlit
-    • visualizza i dati in tempo reale tramite dashboard
+A real-time network traffic monitoring tool that intercepts packets, extracts metadata, and displays communication patterns through an interactive web dashboard — no terminal required.
 
-Cattura dei pacchetti (Packet Sniffing)
-Il cuore del progetto è il packet sniffing, ovvero l'intercettazione passiva del traffico di rete.
-Normalmente, quando la scheda di rete riceve un pacchetto, il sistema operativo lo invia direttamente allo stack TCP/IP per l'elaborazione.
-Utilizzando Scapy, è possibile intercettare una copia di questi pacchetti mentre transitano sulla rete.
-In pratica il sistema:
-    1. ascolta il traffico sull'interfaccia di rete
-    2. riceve una copia dei pacchetti
-    3. li invia al modulo di analisi
-Questo processo avviene in modo passivo, senza interferire con la comunicazione tra i dispositivi.
+![Python](https://img.shields.io/badge/Python-3.10+-blue) ![Scapy](https://img.shields.io/badge/Scapy-2.5-green) ![Streamlit](https://img.shields.io/badge/Streamlit-1.x-red) ![License](https://img.shields.io/badge/License-MIT-yellow)
 
-Multi-Threading e gestione della concorrenza
-La cattura dei pacchetti è un'operazione continua e non deve essere interrotta.
-Se la cattura e la visualizzazione fossero eseguite nello stesso flusso di esecuzione, l'interfaccia web potrebbe bloccare il sistema causando la perdita di pacchetti.
-Per evitare questo problema ho utilizzato il multi-threading.
-Un thread è un flusso di esecuzione indipendente all'interno dello stesso programma.
-Nel progetto vengono utilizzati due thread principali:
-    • Capture Thread → cattura i pacchetti
-    • Analyzer Thread → analizza i pacchetti
+> ⚠️ **Note:** Packet sniffing requires root/administrator privileges. Run with `sudo` on Linux/macOS.
 
-Race Conditions e Queue Thread-Safe
-Quando più thread accedono alla stessa risorsa si può verificare una race condition: un errore causato dall'accesso simultaneo ai dati.
-Per evitare questo problema ho utilizzato una Queue thread-safe.
-La Queue funge da buffer intermedio tra cattura e analisi:
-Capture Thread  →  Queue  →  Analyzer Thread
-Questa struttura garantisce che:
-    • i pacchetti vengano inseriti in modo sicuro
-    • i dati non vengano corrotti
-    • i thread non interferiscano tra loro
+---
 
-Gestione dello stato in Streamlit
-Un problema tipico di Streamlit è che lo script Python viene rieseguito ogni volta che l'utente interagisce con la pagina.
-Senza una gestione dello stato, questo comportamento causerebbe il riavvio continuo dei thread di cattura.
-Per risolvere il problema ho utilizzato st.session_state, che permette di mantenere oggetti persistenti durante la sessione utente.
-In questo modo:
-    • i thread restano attivi
-    • la cattura continua
-    • la dashboard può aggiornarsi senza interrompere il sistema.
+## Features
 
-Astrazione delle interfacce di rete
-Durante lo sviluppo si è verificato un errore legato alla selezione dell'interfaccia di rete:
-ValueError: Interface 'any' not found
-Questo accade perché "any" non rappresenta una vera interfaccia di rete ma una pseudo-interfaccia utilizzata da alcuni strumenti di sniffing.
-Per rendere il sistema indipendente dall'hardware ho implementato un layer di Network Abstraction.
-Il sistema interroga automaticamente il sistema operativo per individuare l'interfaccia di rete attiva (quella usata per il routing) utilizzando funzioni come:
-    • get_default_iface()
-In questo modo il software può funzionare su macchine diverse senza configurazioni manuali.
+- Live packet capture with per-protocol filtering (TCP, UDP, ICMP, SSH, FTP…)
+- Metadata extraction: Source/Destination IP, Protocol, Packet Size, Timestamp
+- Real-time Streamlit dashboard with auto-refresh
+- Thread-safe architecture with zero UI blocking
+- Constant memory footprint via a configurable Sliding Window
 
-Gestione della memoria – Sliding Window
-Un sistema di monitoraggio che rimane attivo a lungo rischia di accumulare dati indefinitamente, causando un consumo eccessivo di memoria.
-Per evitare questo problema ho implementato una Sliding Window.
-Il sistema mantiene in memoria solo gli ultimi N pacchetti analizzati.
-Quando arriva un nuovo pacchetto e il buffer è pieno:
-    • il pacchetto più vecchio viene rimosso
-    • il nuovo pacchetto viene aggiunto
-Questo mantiene il sistema in uno stato stabile con uso di memoria costante nel tempo.
+---
 
-Tecnologie utilizzate
-    • Python
-    • Scapy → packet sniffing e manipolazione dei pacchetti
-    • Streamlit → dashboard web interattiva
-    • Threading → esecuzione concorrente
-    • Queue → comunicazione thread-safe
+## System Architecture
+
+The project follows the **Separation of Concerns** principle, split into three independent modules:
+
+| Module | Responsibility |
+|---|---|
+| `capture.py` | Raw packet sniffing via Scapy |
+| `analyzer.py` | Metadata extraction and enrichment |
+| `app.py` | Streamlit dashboard and state management |
+
+```
+[ Network Interface ]
+        │
+        ▼
+[ capture.py ] ──(Thread-Safe Queue)──▶ [ analyzer.py ] ──▶ [ app.py / Dashboard ]
+```
+
+---
+
+## Technical Challenges & Solutions
+
+### 1. Concurrency & Multi-Threading
+Packet sniffing is a continuous, blocking operation. Running it on the same thread as the UI would cause freezes and packet loss.
+
+**Solution:** A dedicated **Capture Thread** handles the raw stream, while a separate **Analyzer Thread** processes data — keeping the UI fully responsive at all times.
+
+### 2. Thread-Safe Communication
+Sharing mutable data between threads risks Race Conditions and data corruption.
+
+**Solution:** A **Thread-Safe Queue** acts as a buffer between threads. The sniffer enqueues packets; the analyzer dequeues and processes them — no locks, no deadlocks.
+
+### 3. Streamlit State Persistence
+Streamlit reruns the entire script on every user interaction, which would normally restart the sniffing threads and lose all captured data.
+
+**Solution:** `st.session_state` is used to persist thread objects and the data buffer across reruns, ensuring the capture process is never interrupted.
+
+### 4. Memory Management
+Continuous monitoring without limits leads to unbounded memory growth.
+
+**Solution:** A **Sliding Window** retains only the last *N* packets in memory, discarding the oldest as new ones arrive — keeping the footprint constant and predictable.
+
+---
+
+## Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/your-username/network-ids.git
+cd network-ids
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+**Requirements:**
+- Python 3.10+
+- Scapy 2.5+
+- Streamlit 1.x
+
+---
+
+## Usage
+
+```bash
+# Linux / macOS (root required for raw socket access)
+sudo streamlit run app.py
+
+# Windows (run terminal as Administrator)
+streamlit run app.py
+```
+
+Open your browser at `http://localhost:8501`.
+
+---
+
+## Testing
+
+### A. Internal Traffic (ICMP)
+```bash
+ping google.com
+```
+The dashboard should immediately show ICMP packets directed at Google's IP.
+
+### B. Stress Test — High-Volume UDP Flood
+```bash
+# Linux only — requires hping3
+sudo hping3 --udp --flood 127.0.0.1
+```
+Observe how the Sliding Window keeps memory usage flat during the spike.
+
+### C. Protocol Verification
+Connect to an SSH or FTP server and watch the `Protocol` field update in real time on the dashboard.
+
+---
+
+## What I Learned
+
+- How to design a **concurrent, event-driven pipeline** in Python using threads and queues
+- The trade-offs of different **inter-thread communication** strategies (shared memory vs. queues)
+- How to manage **stateful background processes** inside a reactive UI framework like Streamlit
+- The importance of **bounded data structures** in long-running monitoring systems
+
+---
+
+## Known Limitations & Future Improvements
+
+- [ ] **Root requirement** — raw socket access mandates elevated privileges; a possible mitigation is using `libpcap` with appropriate capabilities set
+- [ ] **No persistent storage** — packet history is lost on restart; adding a SQLite backend would fix this
+- [ ] **Single interface** — currently captures on the default interface only; multi-interface support is planned
+- [ ] **No alerting** — a rule-based alert system (e.g., port scan detection, traffic anomalies) would make this production-ready
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Packet Capture | [Scapy](https://scapy.net/) 2.5 |
+| Web Dashboard | [Streamlit](https://streamlit.io/) 1.x |
+| Concurrency | Python `threading` + `queue` |
+| Language | Python 3.10+ |
